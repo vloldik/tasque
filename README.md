@@ -7,7 +7,7 @@ Tasque is a Go package that provides a generic task queue for concurrent process
 
 ## Features
 
-- **Generic Task Queue**: Process tasks concurrently using a generic task queue.
+- **Generic Task Queue**: Process tasks using a generic task queue.
 - **Storage Management**: Store tasks in a storage manager if the queue is full.
 - **Custom Error Handling**: Set a custom error handler to handle errors during task processing.
 
