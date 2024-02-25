@@ -51,7 +51,7 @@ func (queue *TasksQueue[T]) addBatchFromStorageIfNeeded(ctx context.Context) {
 				return
 			}
 			if err = queue.taskStoreManager.DeleteTaskFromStorage(ctx, &item); err != nil {
-				errHandlerFunc = func(err error) {}
+				errHandlerFunc(err)
 			}
 		}
 	}
