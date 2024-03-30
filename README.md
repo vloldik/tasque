@@ -22,104 +22,31 @@ go get github.com/vloldik/tasque
 ## Usecase
 
 ```go
-package main
+ctx := context.Background()
+storage := MockTaskStorageSaveGetDeleter{}
+queue := NewTasksQueue[int](1)
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"sync"
-	"time"
+countDown := sync.WaitGroup{}
+countDown.Add(2)
 
-	"github.com/vloldik/tasque"
-	"github.com/vloldik/tasquelite"
-)
-
-type MailerContextKey string
-
-var MailerContextValueKey = MailerContextKey("mailer")
-
-// Type for e-mail task
-type EmailTask struct {
-	ID        int `gorm:"primaryKey"`
-	Recipient string
-	Subject   string
-	Body      string
-}
-
-type Sender struct {
-	wg *sync.WaitGroup
-}
-
-func (sender Sender) Send(value int) {
+onDo := func(ctx context.Context, data int) {
+	fmt.Printf("Hello from queue! Item №%d\n", data)
 	time.Sleep(time.Second)
-	fmt.Printf("sending value %d\n", value)
-	sender.wg.Done()
+	countDown.Done()
 }
 
-// Do sends the email. This is a placeholder for the actual email sending logic.
-func (et EmailTask) Do(ctx context.Context) {
-	mailer := ctx.Value(MailerContextValueKey)
-	if sender, ok := mailer.(*Sender); ok {
-		sender.Send(et.ID)
-	} else {
-		panic(errors.New("invalid mailer"))
-	}
-}
+storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
+storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
+storage.On("TaskFromStorageBatchCount").Return(1)
+storage.On("GetTasksFromStorage", ctx).
+	Return([]TaskQueueItem[int, Task[int]]{{Task: onDo, Data: 2}}, nil)
 
-func main() {
-	// Create a new context with a background.
-	ctx := context.Background()
-
-	// Create a new WaitGroup to wait for all tasks to complete.
-	wg := &sync.WaitGroup{}
-
-	// Create a new task queue with a capacity of 5.
-	queue := tasque.NewTasksQueue[EmailTask](5)
-
-	// Create a new sender with the WaitGroup.
-	sender := Sender{wg: wg}
-
-	// Add the sender to the context.
-	ctx = context.WithValue(ctx, MailerContextValueKey, &sender)
-
-	// Create a new GORM task storage manager for EmailTask.
-	storage, err := tasquelite.NewGormTaskStorageManager[EmailTask]("test.db", &EmailTask{}, 2)
-	queue.SetTaskStoreManager(storage)
-
-	if err != nil {
-		// Handle the error if storage creation fails.
-		panic(err)
-	}
-
-	// Define a target email task.
-	target := EmailTask{
-		Recipient: "foo@bar.com",
-		Subject:   "<div>Hello!</div>",
-		Body:      "Some important Subj",
-	}
-
-	// Fill the queue with 5 tasks.
-	for i := 0; i < 5; i++ {
-		// Send the task to the queue.
-		// ID will be 0
-		queue.SendToQueue(ctx, target)
-		// Increment the WaitGroup counter for each task.
-		sender.wg.Add(1)
-	}
-
-	// Try to send 10 tasks to the queue, which will be stored in memory.
-	for i := 0; i < 10; i++ {
-		// Send the task to the queue.
-		// ID from storage
-		queue.SendToQueue(ctx, target)
-		// Increment the WaitGroup counter for each task.
-		sender.wg.Add(1)
-	}
-	queue.StartQueue(ctx)
-	// Wait for all tasks to complete.
-	wg.Wait()
-}
+queue.SetTaskStoreManager(&storage)
+queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred") })
+queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 1})
+queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 2})
+queue.StartQueue(ctx)
+countDown.Wait()
 ```
 
 ## Store implementations
