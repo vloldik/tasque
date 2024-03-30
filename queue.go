@@ -7,9 +7,7 @@ import "context"
 // Task is the interface that wraps the basic Do method.
 //
 // Do is called to perform the task.
-type Task interface {
-	Do(ctx context.Context)
-}
+type Task[D interface{}] func(ctx context.Context, data D)
 
 // ErrorHandler is a function that handles errors.
 type ErrorHandler func(err error)
@@ -27,10 +25,10 @@ type ErrorHandlerSetter interface {
 // GetTasksFromStorage retrieves tasks from storage.
 // DeleteTaskFromStorage deletes a task from storage.
 // TaskFromStorageBatchCount returns the number of tasks to retrieve in a single batch.
-type TaskStorageSaveGetDeleter[T Task] interface {
-	SaveTaskToStorage(ctx context.Context, task *T) error
-	GetTasksFromStorage(ctx context.Context) ([]T, error)
-	DeleteTaskFromStorage(ctx context.Context, task *T) error
+type TaskStorageSaveGetDeleter[D interface{}, T Task[D]] interface {
+	SaveTaskToStorage(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
+	GetTasksFromStorage(ctx context.Context) ([]TaskQueueItem[D, T], error)
+	DeleteTaskFromStorage(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
 	TaskFromStorageBatchCount() int
 }
 
@@ -38,17 +36,17 @@ type TaskStorageSaveGetDeleter[T Task] interface {
 //
 // StartQueue starts the task queue.
 // SendToQueue sends a task to the queue.
-type TasksQueueManger[T Task] interface {
+type TasksQueueManger[D interface{}, T Task[D]] interface {
 	StartQueue(ctx context.Context)
-	SendToQueue(ctx context.Context, item T) error
+	SendToQueue(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
 }
 
 // TasksQueueManagerWithStoreAndErrorHandler is the interface that combines TasksQueueManger and TaskStorageSaveGetDeleter,
 // and includes the ErrorHandlerSetter for setting the error handler.
 //
 // It inherits the methods from TasksQueueManger and TaskStorageSaveGetDeleter, and adds the SetErrorHandler method from ErrorHandlerSetter.
-type TasksQueueManagerWithStoreAndErrorHandler[T Task] interface {
-	TasksQueueManger[T]
-	SetTaskStoreManager(manager TaskStorageSaveGetDeleter[T])
+type TasksQueueManagerWithStoreAndErrorHandler[D interface{}, T Task[D]] interface {
+	TasksQueueManger[D, T]
+	SetTaskStoreManager(manager TaskStorageSaveGetDeleter[D, T])
 	ErrorHandlerSetter
 }
