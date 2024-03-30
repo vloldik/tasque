@@ -23,7 +23,7 @@ go get github.com/vloldik/tasque
 
 ```go
 ctx := context.Background()
-storage := MockTaskStorageSaveGetDeleter{}
+storage := YOUR_STORAGE_IMPLEMENTATION{}
 queue := NewTasksQueue[int](1)
 
 countDown := sync.WaitGroup{}
@@ -34,12 +34,6 @@ onDo := func(ctx context.Context, data int) {
 	time.Sleep(time.Second)
 	countDown.Done()
 }
-
-storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
-storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
-storage.On("TaskFromStorageBatchCount").Return(1)
-storage.On("GetTasksFromStorage", ctx).
-	Return([]TaskQueueItem[int, Task[int]]{{Task: onDo, Data: 2}}, nil)
 
 queue.SetTaskStoreManager(&storage)
 queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred") })
