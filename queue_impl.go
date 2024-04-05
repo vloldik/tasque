@@ -12,18 +12,18 @@ import (
 var ErrQueueIsFull = errors.New("message queue is full")
 
 // TasksQueue is a generic task queue.
-type TasksQueue[D interface{}, T Task[D]] struct {
-	target           T
+type TasksQueue[D interface{}] struct {
+	target           Task[D]
 	dataChannel      chan D
 	cacheCapacity    int
 	errorHandler     ErrorHandler
-	taskStoreManager TaskStorageSaveGetDeleter[D, T]
+	taskStoreManager TaskStorageSaveGetDeleter[D]
 	errorHandlerMu   sync.Mutex
 }
 
 // NewTasksQueue creates a new TasksQueue with the given cache capacity.
-func NewTasksQueue[D interface{}, T Task[D]](function T, cacheCapacity int) *TasksQueue[D, T] {
-	return &TasksQueue[D, T]{
+func NewTasksQueue[D interface{}](function Task[D], cacheCapacity int) *TasksQueue[D] {
+	return &TasksQueue[D]{
 		dataChannel:   make(chan D, cacheCapacity),
 		cacheCapacity: cacheCapacity,
 		errorHandler:  func(err error) {},
@@ -31,12 +31,12 @@ func NewTasksQueue[D interface{}, T Task[D]](function T, cacheCapacity int) *Tas
 	}
 }
 
-func (queue *TasksQueue[D, T]) SetFunction(function T) {
+func (queue *TasksQueue[D]) SetFunction(function Task[D]) {
 	queue.target = function
 }
 
 // addBatchFromStorageIfNeeded adds a batch of tasks from storage to the queue if needed.
-func (queue *TasksQueue[D, T]) addBatchFromStorageIfNeeded(ctx context.Context) {
+func (queue *TasksQueue[D]) addBatchFromStorageIfNeeded(ctx context.Context) {
 	if queue.taskStoreManager == nil {
 		return
 	}
@@ -49,13 +49,7 @@ func (queue *TasksQueue[D, T]) addBatchFromStorageIfNeeded(ctx context.Context) 
 			return
 		}
 		for _, item := range items {
-			errChan := make(chan error)
-			go queue.sendToQueue(errChan, item)
-			err := <-errChan
-			if err != nil {
-				errHandlerFunc(err)
-				return
-			}
+			queue.SendToQueue(ctx, item)
 			if err = queue.taskStoreManager.DeleteTaskFromStorage(ctx, &item); err != nil {
 				errHandlerFunc(err)
 			}
@@ -64,7 +58,7 @@ func (queue *TasksQueue[D, T]) addBatchFromStorageIfNeeded(ctx context.Context) 
 }
 
 // doTarget performs the given task.
-func (queue *TasksQueue[D, T]) doTarget(ctx context.Context, data D) {
+func (queue *TasksQueue[D]) doTarget(ctx context.Context, data D) {
 	queue.errorHandlerMu.Lock()
 	handler := queue.errorHandler
 	queue.errorHandlerMu.Unlock()
@@ -78,7 +72,7 @@ func (queue *TasksQueue[D, T]) doTarget(ctx context.Context, data D) {
 }
 
 // startQueue starts the task queue.
-func (queue *TasksQueue[D, T]) startQueue(ctx context.Context) {
+func (queue *TasksQueue[D]) startQueue(ctx context.Context) {
 	for {
 		queue.addBatchFromStorageIfNeeded(ctx)
 		select {
@@ -93,12 +87,12 @@ func (queue *TasksQueue[D, T]) startQueue(ctx context.Context) {
 }
 
 // StartQueue starts the task queue in a new goroutine.
-func (queue *TasksQueue[D, T]) StartQueue(ctx context.Context) {
+func (queue *TasksQueue[D]) StartQueue(ctx context.Context) {
 	go queue.startQueue(ctx)
 }
 
 // sendToQueue sends a task to the queue.
-func (queue *TasksQueue[D, T]) sendToQueue(errChan chan error, data D) {
+func (queue *TasksQueue[D]) sendToQueue(errChan chan error, data D) {
 	select {
 	case queue.dataChannel <- data:
 		errChan <- nil
@@ -111,7 +105,7 @@ func (queue *TasksQueue[D, T]) sendToQueue(errChan chan error, data D) {
 
 // SendToQueue sends a task to the queue. If the queue is full and a task store manager is set,
 // the task is saved to storage.
-func (queue *TasksQueue[D, T]) SendToQueue(ctx context.Context, data D) (err error) {
+func (queue *TasksQueue[D]) SendToQueue(ctx context.Context, data D) (err error) {
 	errChan := make(chan error)
 	go queue.sendToQueue(errChan, data)
 	err = <-errChan
@@ -124,12 +118,12 @@ func (queue *TasksQueue[D, T]) SendToQueue(ctx context.Context, data D) (err err
 }
 
 // SetTaskStoreManager sets the task store manager.
-func (queue *TasksQueue[D, T]) SetTaskStoreManager(manager TaskStorageSaveGetDeleter[D, T]) {
+func (queue *TasksQueue[D]) SetTaskStoreManager(manager TaskStorageSaveGetDeleter[D]) {
 	queue.taskStoreManager = manager
 }
 
 // SetErrorHandler sets the error handler.
-func (queue *TasksQueue[D, T]) SetErrorHandler(handler ErrorHandler) {
+func (queue *TasksQueue[D]) SetErrorHandler(handler ErrorHandler) {
 	queue.errorHandlerMu.Lock()
 	defer queue.errorHandlerMu.Unlock()
 	queue.errorHandler = handler

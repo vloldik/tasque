@@ -38,7 +38,7 @@ func (m *MockTaskStorageSaveGetDeleter) DeleteTaskFromStorage(ctx context.Contex
 
 // Test the NewTasksQueue function.
 func TestNewTasksQueue(t *testing.T) {
-	queue := NewTasksQueue[int, Task[int]](func(ctx context.Context, data int) {}, 10)
+	queue := NewTasksQueue[int](func(ctx context.Context, data int) {}, 10)
 	assert.NotNil(t, queue)
 	assert.Equal(t, 10, queue.cacheCapacity)
 }
@@ -115,23 +115,21 @@ func TestMainUsage(t *testing.T) {
 	storage := MockTaskStorageSaveGetDeleter{}
 
 	countDown := sync.WaitGroup{}
-	countDown.Add(2)
+	countDown.Add(4)
 
-	var onDo Task[int] = func(ctx context.Context, data int) {
+	queue := NewTasksQueue(func(ctx context.Context, data int) {
 		fmt.Printf("Hello from queue! Item №%d\n", data)
 		time.Sleep(time.Second)
 		countDown.Done()
-	}
-
-	queue := NewTasksQueue[int](onDo, 2)
-	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
+	}, 2)
+	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil)
 	storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
 	storage.On("TaskFromStorageBatchCount").Return(1)
 	storage.On("GetTasksFromStorage", ctx).
 		Return([]int{3, 4}, nil)
 
 	queue.SetTaskStoreManager(&storage)
-	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e", err) })
+	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
 	queue.SendToQueue(ctx, 1)
 	queue.SendToQueue(ctx, 2)
 	queue.StartQueue(ctx)
