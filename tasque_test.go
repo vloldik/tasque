@@ -21,24 +21,24 @@ func (m *MockTaskStorageSaveGetDeleter) TaskFromStorageBatchCount() int {
 	return args.Int(0)
 }
 
-func (m *MockTaskStorageSaveGetDeleter) GetTasksFromStorage(ctx context.Context) ([]TaskQueueItem[int, Task[int]], error) {
+func (m *MockTaskStorageSaveGetDeleter) GetTasksFromStorage(ctx context.Context) ([]int, error) {
 	args := m.Called(ctx)
-	return args.Get(0).([]TaskQueueItem[int, Task[int]]), args.Error(1)
+	return args.Get(0).([]int), args.Error(1)
 }
 
-func (m *MockTaskStorageSaveGetDeleter) SaveTaskToStorage(ctx context.Context, item *TaskQueueItem[int, Task[int]]) error {
+func (m *MockTaskStorageSaveGetDeleter) SaveTaskToStorage(ctx context.Context, item *int) error {
 	args := m.Called(ctx, item)
 	return args.Error(0)
 }
 
-func (m *MockTaskStorageSaveGetDeleter) DeleteTaskFromStorage(ctx context.Context, item *TaskQueueItem[int, Task[int]]) error {
+func (m *MockTaskStorageSaveGetDeleter) DeleteTaskFromStorage(ctx context.Context, item *int) error {
 	args := m.Called(ctx, item)
 	return args.Error(0)
 }
 
 // Test the NewTasksQueue function.
 func TestNewTasksQueue(t *testing.T) {
-	queue := NewTasksQueue[int, Task[int]](10)
+	queue := NewTasksQueue[int, Task[int]](func(ctx context.Context, data int) {}, 10)
 	assert.NotNil(t, queue)
 	assert.Equal(t, 10, queue.cacheCapacity)
 }
@@ -52,10 +52,10 @@ func TestAddBatchFromStorageIfNeeded(t *testing.T) {
 	taskStorageManager.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
 	taskStorageManager.On("TaskFromStorageBatchCount").Return(5)
 	taskStorageManager.On("GetTasksFromStorage", ctx).
-		Return([]TaskQueueItem[int, Task[int]]{{Task: func(ctx context.Context, data int) {}, Data: 1}}, nil)
+		Return([]int{1}, nil)
 
 	// Create a task queue and set the mocked task storage manager.
-	queue := NewTasksQueue[int](10)
+	queue := NewTasksQueue[int](Task[int](func(ctx context.Context, data int) {}), 10)
 	queue.SetTaskStoreManager(taskStorageManager)
 
 	// Call the addBatchFromStorageIfNeeded function.
@@ -71,14 +71,14 @@ func TestDoTarget(t *testing.T) {
 	done := false
 
 	// Create a mocked task.
-	task := func(ctx context.Context, data int) {
+	task := Task[int](func(ctx context.Context, data int) {
 		done = true
-	}
+	})
 	// Create a task queue.
-	queue := NewTasksQueue[int](10)
+	queue := NewTasksQueue[int](task, 10)
 
 	// Call the doTarget function.
-	queue.doTarget(ctx, task, 42)
+	queue.doTarget(ctx, 42)
 
 	// Verify that the mocked task was called.
 	assert.True(t, done)
@@ -96,8 +96,8 @@ func TestStartQueue(t *testing.T) {
 	}
 
 	// Create a task queue.
-	queue := NewTasksQueue[int](10)
-	queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: task, Data: 42})
+	queue := NewTasksQueue[int](Task[int](task), 10)
+	queue.SendToQueue(ctx, 42)
 
 	// Start the task queue in a separate goroutine.
 	go func() {
@@ -113,27 +113,27 @@ func TestStartQueue(t *testing.T) {
 func TestMainUsage(t *testing.T) {
 	ctx := context.Background()
 	storage := MockTaskStorageSaveGetDeleter{}
-	queue := NewTasksQueue[int](1)
 
 	countDown := sync.WaitGroup{}
 	countDown.Add(2)
 
-	onDo := func(ctx context.Context, data int) {
+	var onDo Task[int] = func(ctx context.Context, data int) {
 		fmt.Printf("Hello from queue! Item №%d\n", data)
 		time.Sleep(time.Second)
 		countDown.Done()
 	}
 
+	queue := NewTasksQueue[int](onDo, 2)
 	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
 	storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
 	storage.On("TaskFromStorageBatchCount").Return(1)
 	storage.On("GetTasksFromStorage", ctx).
-		Return([]TaskQueueItem[int, Task[int]]{{Task: onDo, Data: 2}}, nil)
+		Return([]int{3, 4}, nil)
 
 	queue.SetTaskStoreManager(&storage)
-	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred") })
-	queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 1})
-	queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 2})
+	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e", err) })
+	queue.SendToQueue(ctx, 1)
+	queue.SendToQueue(ctx, 2)
 	queue.StartQueue(ctx)
 	countDown.Wait()
 }

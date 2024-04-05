@@ -26,9 +26,9 @@ type ErrorHandlerSetter interface {
 // DeleteTaskFromStorage deletes a task from storage.
 // TaskFromStorageBatchCount returns the number of tasks to retrieve in a single batch.
 type TaskStorageSaveGetDeleter[D interface{}, T Task[D]] interface {
-	SaveTaskToStorage(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
-	GetTasksFromStorage(ctx context.Context) ([]TaskQueueItem[D, T], error)
-	DeleteTaskFromStorage(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
+	SaveTaskToStorage(ctx context.Context, data *D) error
+	GetTasksFromStorage(ctx context.Context) ([]D, error)
+	DeleteTaskFromStorage(ctx context.Context, data *D) error
 	TaskFromStorageBatchCount() int
 }
 
@@ -38,7 +38,7 @@ type TaskStorageSaveGetDeleter[D interface{}, T Task[D]] interface {
 // SendToQueue sends a task to the queue.
 type TasksQueueManger[D interface{}, T Task[D]] interface {
 	StartQueue(ctx context.Context)
-	SendToQueue(ctx context.Context, queueItem *TaskQueueItem[D, T]) error
+	SendToQueue(ctx context.Context, data D) error
 }
 
 // TasksQueueManagerWithStoreAndErrorHandler is the interface that combines TasksQueueManger and TaskStorageSaveGetDeleter,

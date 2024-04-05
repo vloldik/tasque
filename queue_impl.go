@@ -11,14 +11,10 @@ import (
 
 var ErrQueueIsFull = errors.New("message queue is full")
 
-type TaskQueueItem[D interface{}, T Task[D]] struct {
-	Task T
-	Data D
-}
-
 // TasksQueue is a generic task queue.
 type TasksQueue[D interface{}, T Task[D]] struct {
-	channel          chan TaskQueueItem[D, T]
+	target           T
+	dataChannel      chan D
 	cacheCapacity    int
 	errorHandler     ErrorHandler
 	taskStoreManager TaskStorageSaveGetDeleter[D, T]
@@ -26,12 +22,17 @@ type TasksQueue[D interface{}, T Task[D]] struct {
 }
 
 // NewTasksQueue creates a new TasksQueue with the given cache capacity.
-func NewTasksQueue[D interface{}, T Task[D]](cacheCapacity int) *TasksQueue[D, T] {
+func NewTasksQueue[D interface{}, T Task[D]](function T, cacheCapacity int) *TasksQueue[D, T] {
 	return &TasksQueue[D, T]{
-		channel:       make(chan TaskQueueItem[D, T], cacheCapacity),
+		dataChannel:   make(chan D, cacheCapacity),
 		cacheCapacity: cacheCapacity,
 		errorHandler:  func(err error) {},
+		target:        function,
 	}
+}
+
+func (queue *TasksQueue[D, T]) SetFunction(function T) {
+	queue.target = function
 }
 
 // addBatchFromStorageIfNeeded adds a batch of tasks from storage to the queue if needed.
@@ -41,7 +42,7 @@ func (queue *TasksQueue[D, T]) addBatchFromStorageIfNeeded(ctx context.Context) 
 	}
 	errHandlerFunc := queue.errorHandler
 
-	if len(queue.channel)+queue.taskStoreManager.TaskFromStorageBatchCount() <= queue.cacheCapacity {
+	if len(queue.dataChannel)+queue.taskStoreManager.TaskFromStorageBatchCount() <= queue.cacheCapacity {
 		items, err := queue.taskStoreManager.GetTasksFromStorage(ctx)
 		if err != nil {
 			errHandlerFunc(err)
@@ -63,7 +64,7 @@ func (queue *TasksQueue[D, T]) addBatchFromStorageIfNeeded(ctx context.Context) 
 }
 
 // doTarget performs the given task.
-func (queue *TasksQueue[D, T]) doTarget(ctx context.Context, target T, data D) {
+func (queue *TasksQueue[D, T]) doTarget(ctx context.Context, data D) {
 	queue.errorHandlerMu.Lock()
 	handler := queue.errorHandler
 	queue.errorHandlerMu.Unlock()
@@ -73,7 +74,7 @@ func (queue *TasksQueue[D, T]) doTarget(ctx context.Context, target T, data D) {
 			handler(fmt.Errorf("panic occurred: %v", r))
 		}
 	}()
-	target(ctx, data)
+	queue.target(ctx, data)
 }
 
 // startQueue starts the task queue.
@@ -83,8 +84,8 @@ func (queue *TasksQueue[D, T]) startQueue(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case target := <-queue.channel:
-			queue.doTarget(ctx, target.Task, target.Data)
+		case data := <-queue.dataChannel:
+			queue.doTarget(ctx, data)
 		default:
 
 		}
@@ -97,9 +98,9 @@ func (queue *TasksQueue[D, T]) StartQueue(ctx context.Context) {
 }
 
 // sendToQueue sends a task to the queue.
-func (queue *TasksQueue[D, T]) sendToQueue(errChan chan error, item TaskQueueItem[D, T]) {
+func (queue *TasksQueue[D, T]) sendToQueue(errChan chan error, data D) {
 	select {
-	case queue.channel <- item:
+	case queue.dataChannel <- data:
 		errChan <- nil
 		return
 	default:
@@ -110,12 +111,12 @@ func (queue *TasksQueue[D, T]) sendToQueue(errChan chan error, item TaskQueueIte
 
 // SendToQueue sends a task to the queue. If the queue is full and a task store manager is set,
 // the task is saved to storage.
-func (queue *TasksQueue[D, T]) SendToQueue(ctx context.Context, item TaskQueueItem[D, T]) (err error) {
+func (queue *TasksQueue[D, T]) SendToQueue(ctx context.Context, data D) (err error) {
 	errChan := make(chan error)
-	go queue.sendToQueue(errChan, item)
+	go queue.sendToQueue(errChan, data)
 	err = <-errChan
 	if err != nil && errors.Is(err, ErrQueueIsFull) && queue.taskStoreManager != nil {
-		return queue.taskStoreManager.SaveTaskToStorage(ctx, &item)
+		return queue.taskStoreManager.SaveTaskToStorage(ctx, &data)
 	} else if err != nil {
 		queue.errorHandler(err)
 	}
