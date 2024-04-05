@@ -38,7 +38,7 @@ func (m *MockTaskStorageSaveGetDeleter) DeleteTaskFromStorage(ctx context.Contex
 
 // Test the NewTasksQueue function.
 func TestNewTasksQueue(t *testing.T) {
-	queue := NewTasksQueue[int](func(ctx context.Context, data int) {}, 10)
+	queue := NewTasksQueue[int](func(ctx context.Context, data int) {}, 10, 1)
 	assert.NotNil(t, queue)
 	assert.Equal(t, 10, queue.cacheCapacity)
 }
@@ -55,7 +55,7 @@ func TestAddBatchFromStorageIfNeeded(t *testing.T) {
 		Return([]int{1}, nil)
 
 	// Create a task queue and set the mocked task storage manager.
-	queue := NewTasksQueue[int](Task[int](func(ctx context.Context, data int) {}), 10)
+	queue := NewTasksQueue[int](Task[int](func(ctx context.Context, data int) {}), 10, 1)
 	queue.SetTaskStoreManager(taskStorageManager)
 
 	// Call the addBatchFromStorageIfNeeded function.
@@ -75,7 +75,7 @@ func TestDoTarget(t *testing.T) {
 		done = true
 	})
 	// Create a task queue.
-	queue := NewTasksQueue[int](task, 10)
+	queue := NewTasksQueue[int](task, 10, 1)
 
 	// Call the doTarget function.
 	queue.doTarget(ctx, 42)
@@ -96,7 +96,7 @@ func TestStartQueue(t *testing.T) {
 	}
 
 	// Create a task queue.
-	queue := NewTasksQueue[int](Task[int](task), 10)
+	queue := NewTasksQueue[int](Task[int](task), 10, 1)
 	queue.SendToQueue(ctx, 42)
 
 	// Start the task queue in a separate goroutine.
@@ -115,16 +115,16 @@ func TestMainUsage(t *testing.T) {
 	storage := MockTaskStorageSaveGetDeleter{}
 
 	countDown := sync.WaitGroup{}
-	countDown.Add(4)
+	countDown.Add(20)
 
 	queue := NewTasksQueue(func(ctx context.Context, data int) {
 		fmt.Printf("Hello from queue! Item №%d\n", data)
 		time.Sleep(time.Second)
 		countDown.Done()
-	}, 2)
+	}, 2, 10)
 	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil)
 	storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
-	storage.On("TaskFromStorageBatchCount").Return(1)
+	storage.On("TaskFromStorageBatchCount").Return(2)
 	storage.On("GetTasksFromStorage", ctx).
 		Return([]int{3, 4}, nil)
 

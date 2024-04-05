@@ -19,15 +19,18 @@ type TasksQueue[D interface{}] struct {
 	errorHandler     ErrorHandler
 	taskStoreManager TaskStorageSaveGetDeleter[D]
 	errorHandlerMu   sync.Mutex
+	maxParallelJobs  int
+	wg               sync.WaitGroup
 }
 
 // NewTasksQueue creates a new TasksQueue with the given cache capacity.
-func NewTasksQueue[D interface{}](function Task[D], cacheCapacity int) *TasksQueue[D] {
+func NewTasksQueue[D interface{}](function Task[D], cacheCapacity int, maxParallelJobs int) *TasksQueue[D] {
 	return &TasksQueue[D]{
-		dataChannel:   make(chan D, cacheCapacity),
-		cacheCapacity: cacheCapacity,
-		errorHandler:  func(err error) {},
-		target:        function,
+		dataChannel:     make(chan D, cacheCapacity),
+		cacheCapacity:   cacheCapacity,
+		errorHandler:    func(err error) {},
+		target:          function,
+		maxParallelJobs: maxParallelJobs,
 	}
 }
 
@@ -73,13 +76,24 @@ func (queue *TasksQueue[D]) doTarget(ctx context.Context, data D) {
 
 // startQueue starts the task queue.
 func (queue *TasksQueue[D]) startQueue(ctx context.Context) {
+	semaphore := make(chan struct{}, queue.maxParallelJobs)
+
 	for {
 		queue.addBatchFromStorageIfNeeded(ctx)
 		select {
 		case <-ctx.Done():
+			queue.wg.Wait() // wait for all tasks to finish
 			return
 		case data := <-queue.dataChannel:
-			queue.doTarget(ctx, data)
+			queue.wg.Add(1)
+			semaphore <- struct{}{} // acquire a slot
+			go func(data D) {
+				defer func() {
+					<-semaphore // release the slot
+					queue.wg.Done()
+				}()
+				queue.doTarget(ctx, data)
+			}(data)
 		default:
 
 		}
