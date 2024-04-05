@@ -23,22 +23,19 @@ go get github.com/vloldik/tasque
 
 ```go
 ctx := context.Background()
-storage := YOUR_STORAGE_IMPLEMENTATION{}
-queue := NewTasksQueue[int](1)
-
 countDown := sync.WaitGroup{}
 countDown.Add(2)
 
-onDo := func(ctx context.Context, data int) {
+queue := NewTasksQueue(func(ctx context.Context, data int) {
 	fmt.Printf("Hello from queue! Item №%d\n", data)
 	time.Sleep(time.Second)
 	countDown.Done()
-}
+}, 2)
 
-queue.SetTaskStoreManager(&storage)
-queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred") })
-queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 1})
-queue.SendToQueue(ctx, TaskQueueItem[int, Task[int]]{Task: onDo, Data: 2})
+queue.SetTaskStoreManager(&yourmanager)
+queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
+queue.SendToQueue(ctx, 1)
+queue.SendToQueue(ctx, 2)
 queue.StartQueue(ctx)
 countDown.Wait()
 ```
