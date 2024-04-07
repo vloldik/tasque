@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 var ErrQueueIsFull = errors.New("message queue is full")
@@ -32,6 +33,26 @@ func NewTasksQueue[D interface{}](function Task[D], cacheCapacity int, maxParall
 		target:          function,
 		maxParallelJobs: maxParallelJobs,
 	}
+}
+
+func NewRepeatQueue[D interface{}](function Task[D], repeatTimeout time.Duration) *TasksQueue[D] {
+
+	tasq := &TasksQueue[D]{
+		dataChannel:     make(chan D, 1),
+		cacheCapacity:   1,
+		errorHandler:    func(err error) {},
+		target:          function,
+		maxParallelJobs: 1,
+	}
+
+	fn := func(ctx context.Context, data D) {
+		function(ctx, data)
+		time.Sleep(repeatTimeout)
+		tasq.SendToQueue(ctx, data)
+	}
+
+	tasq.SetFunction(fn)
+	return tasq
 }
 
 func (queue *TasksQueue[D]) SetFunction(function Task[D]) {

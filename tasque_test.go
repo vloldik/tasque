@@ -117,11 +117,14 @@ func TestMainUsage(t *testing.T) {
 	countDown := sync.WaitGroup{}
 	countDown.Add(20)
 
+	maxParallelJobs := 10
+	maxQueueSizeInRam := 2
+
 	queue := NewTasksQueue(func(ctx context.Context, data int) {
 		fmt.Printf("Hello from queue! Item №%d\n", data)
 		time.Sleep(time.Second)
 		countDown.Done()
-	}, 2, 10)
+	}, maxQueueSizeInRam, maxParallelJobs)
 	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil)
 	storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
 	storage.On("TaskFromStorageBatchCount").Return(2)
@@ -132,6 +135,23 @@ func TestMainUsage(t *testing.T) {
 	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
 	queue.SendToQueue(ctx, 1)
 	queue.SendToQueue(ctx, 2)
+	queue.StartQueue(ctx)
+	countDown.Wait()
+}
+
+func TestRepeatQueue(t *testing.T) {
+	ctx := context.Background()
+
+	countDown := sync.WaitGroup{}
+	countDown.Add(10_00)
+
+	queue := NewRepeatQueue(func(ctx context.Context, data int) {
+		countDown.Done()
+	}, time.Millisecond)
+
+	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
+	err := queue.SendToQueue(ctx, 1)
+	fmt.Println(err)
 	queue.StartQueue(ctx)
 	countDown.Wait()
 }
