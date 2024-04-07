@@ -26,11 +26,14 @@ ctx := context.Background()
 countDown := sync.WaitGroup{}
 countDown.Add(2)
 
+maxParallelJobs := 10
+maxQueueSizeInRam := 2
+
 queue := NewTasksQueue(func(ctx context.Context, data int) {
 	fmt.Printf("Hello from queue! Item №%d\n", data)
 	time.Sleep(time.Second)
 	countDown.Done()
-}, 2)
+}, maxQueueSizeInRam, maxParallelJobs)
 
 queue.SetTaskStoreManager(&yourmanager)
 queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
