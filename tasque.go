@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 )
 
@@ -13,7 +12,6 @@ type Tasque[D struct{}] struct {
 	threadCount        int
 	task               Task[D]
 	taskStorageManager TaskStorageSaveGetDeleter[D]
-	wg                 sync.WaitGroup
 	currentlyRunning   atomic.Int32
 	signalChannel      chan struct{}
 	errorHandler       ErrorHandler
@@ -33,7 +31,7 @@ func CreateTaskQueue[D struct{}](task Task[D], threadCount int, taskStorageManag
 
 func (queue *Tasque[D]) SendToQueue(ctx context.Context, data D) (err error) {
 	err = queue.taskStorageManager.SaveTaskToStorage(ctx, &data)
-	queue.signalChannel <- struct{}{}
+	go func() { queue.signalChannel <- struct{}{} }()
 	return
 }
 
@@ -75,7 +73,7 @@ func (queue *Tasque[D]) startQueue(ctx context.Context) {
 			}
 			tasks := queue.getFromQueue(ctx)
 			for _, data := range tasks {
-				queue.startTask(ctx, data)
+				go queue.startTask(ctx, data)
 			}
 		case <-ctx.Done():
 			return

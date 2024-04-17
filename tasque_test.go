@@ -2,7 +2,9 @@ package tasque
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 )
 
 type MockTaskStorage struct{}
@@ -45,7 +47,7 @@ func TestCreateTaskQueue(t *testing.T) {
 		t.Error("Expected task to be set")
 	}
 
-	if queue.errorHandler != nil {
+	if queue.errorHandler == nil {
 		t.Error("Expected errorHandler to be set correctly")
 	}
 
@@ -124,4 +126,27 @@ func TestStartQueue_AlreadyStarted(t *testing.T) {
 	if err == nil || err.Error() != "queue is already started" {
 		t.Errorf("Expected err to be 'queue is already started', got %v", err)
 	}
+}
+
+func TestQueueUsage(t *testing.T) {
+	taskStorageManager := NewMemoryTaskStorage()
+	errorHandler := MockErrorHandler
+
+	wg := sync.WaitGroup{}
+	wg.Add(6)
+
+	queue := CreateTaskQueue(func(ctx context.Context, data struct{}) (needToReshedule bool) {
+		wg.Done()
+		time.Sleep(time.Second)
+		return true
+	}, 3, taskStorageManager, errorHandler)
+
+	// Start the queue
+	err := queue.StartQueue(context.Background())
+	queue.SendToQueue(context.Background(), struct{}{})
+	if err != nil {
+		t.Errorf("Expected err to be nil, got %v", err)
+	}
+
+	wg.Wait()
 }
