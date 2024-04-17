@@ -2,156 +2,126 @@ package tasque
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-// Define a mock TaskStorageSaveGetDeleter interface for testing purposes.
-type MockTaskStorageSaveGetDeleter struct {
-	mock.Mock
+type MockTaskStorage struct{}
+
+func (m *MockTaskStorage) SaveTaskToStorage(ctx context.Context, data *struct{}) error {
+	return nil
 }
 
-func (m *MockTaskStorageSaveGetDeleter) TaskFromStorageBatchCount() int {
-	args := m.Called()
-	return args.Int(0)
+func (m *MockTaskStorage) GetTasksFromStorage(ctx context.Context, count int) ([]struct{}, error) {
+	return []struct{}{}, nil
 }
 
-func (m *MockTaskStorageSaveGetDeleter) GetTasksFromStorage(ctx context.Context) ([]int, error) {
-	args := m.Called(ctx)
-	return args.Get(0).([]int), args.Error(1)
+func (m *MockTaskStorage) DeleteTaskFromStorage(ctx context.Context, data *struct{}) error {
+	return nil
 }
 
-func (m *MockTaskStorageSaveGetDeleter) SaveTaskToStorage(ctx context.Context, item *int) error {
-	args := m.Called(ctx, item)
-	return args.Error(0)
+func MockErrorHandler(err error) bool {
+	return false
 }
 
-func (m *MockTaskStorageSaveGetDeleter) DeleteTaskFromStorage(ctx context.Context, item *int) error {
-	args := m.Called(ctx, item)
-	return args.Error(0)
+func MockTask(ctx context.Context, data struct{}) bool {
+	return true
 }
 
-// Test the NewTasksQueue function.
-func TestNewTasksQueue(t *testing.T) {
-	queue := NewTasksQueue[int](func(ctx context.Context, data int) {}, 10, 1)
-	assert.NotNil(t, queue)
-	assert.Equal(t, 10, queue.cacheCapacity)
-}
+func TestCreateTaskQueue(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
 
-// Test the addBatchFromStorageIfNeeded function.
-func TestAddBatchFromStorageIfNeeded(t *testing.T) {
-	ctx := context.Background()
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
 
-	// Create a mocked task storage manager.
-	taskStorageManager := new(MockTaskStorageSaveGetDeleter)
-	taskStorageManager.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil).Once()
-	taskStorageManager.On("TaskFromStorageBatchCount").Return(5)
-	taskStorageManager.On("GetTasksFromStorage", ctx).
-		Return([]int{1}, nil)
-
-	// Create a task queue and set the mocked task storage manager.
-	queue := NewTasksQueue[int](Task[int](func(ctx context.Context, data int) {}), 10, 1)
-	queue.SetTaskStoreManager(taskStorageManager)
-
-	// Call the addBatchFromStorageIfNeeded function.
-	queue.addBatchFromStorageIfNeeded(ctx)
-
-	// Verify that the mocked task storage manager was called.
-	taskStorageManager.AssertExpectations(t)
-}
-
-// Test the doTarget function.
-func TestDoTarget(t *testing.T) {
-	ctx := context.Background()
-	done := false
-
-	// Create a mocked task.
-	task := Task[int](func(ctx context.Context, data int) {
-		done = true
-	})
-	// Create a task queue.
-	queue := NewTasksQueue[int](task, 10, 1)
-
-	// Call the doTarget function.
-	queue.doTarget(ctx, 42)
-
-	// Verify that the mocked task was called.
-	assert.True(t, done)
-}
-
-// Test the startQueue function.
-func TestStartQueue(t *testing.T) {
-	ctx := context.Background()
-
-	done := make(chan bool)
-
-	// Create a mocked task.
-	task := func(ctx context.Context, data int) {
-		done <- true
+	if queue.threadCount != 3 {
+		t.Error("Expected threadCount to be 3")
 	}
 
-	// Create a task queue.
-	queue := NewTasksQueue[int](Task[int](task), 10, 1)
-	queue.SendToQueue(ctx, 42)
+	if queue.taskStorageManager != taskStorageManager {
+		t.Error("Expected taskStorageManager to be set correctly")
+	}
 
-	// Start the task queue in a separate goroutine.
-	go func() {
-		queue.StartQueue(ctx)
-		close(done)
-	}()
+	if queue.task == nil {
+		t.Error("Expected task to be set")
+	}
 
-	// Wait for the task queue to finish.
-	<-done
+	if queue.errorHandler != nil {
+		t.Error("Expected errorHandler to be set correctly")
+	}
 
+	if queue.signalChannel == nil {
+		t.Error("Expected signalChannel to be initialized")
+	}
 }
 
-func TestMainUsage(t *testing.T) {
-	ctx := context.Background()
-	storage := MockTaskStorageSaveGetDeleter{}
+func TestSendToQueue(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
 
-	countDown := sync.WaitGroup{}
-	countDown.Add(20)
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
 
-	maxParallelJobs := 10
-	maxQueueSizeInRam := 2
+	err := queue.SendToQueue(context.Background(), struct{}{})
 
-	queue := NewTasksQueue(func(ctx context.Context, data int) {
-		fmt.Printf("Hello from queue! Item №%d\n", data)
-		time.Sleep(time.Second)
-		countDown.Done()
-	}, maxQueueSizeInRam, maxParallelJobs)
-	storage.On("DeleteTaskFromStorage", ctx, mock.Anything).Return(nil)
-	storage.On("SaveTaskToStorage", ctx, mock.Anything).Return(nil)
-	storage.On("TaskFromStorageBatchCount").Return(2)
-	storage.On("GetTasksFromStorage", ctx).
-		Return([]int{3, 4}, nil)
-
-	queue.SetTaskStoreManager(&storage)
-	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
-	queue.SendToQueue(ctx, 1)
-	queue.SendToQueue(ctx, 2)
-	queue.StartQueue(ctx)
-	countDown.Wait()
+	if err != nil {
+		t.Errorf("Expected err to be nil, got %v", err)
+	}
 }
 
-func TestRepeatQueue(t *testing.T) {
-	ctx := context.Background()
+func TestGetFreeThreadsCount(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
 
-	countDown := sync.WaitGroup{}
-	countDown.Add(10_00)
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
 
-	queue := NewRepeatQueue(func(ctx context.Context, data int) {
-		countDown.Done()
-	}, time.Millisecond)
+	// Assuming no tasks are currently running
+	count := queue.getFreeThreadsCount()
 
-	queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
-	err := queue.SendToQueue(ctx, 1)
-	fmt.Println(err)
-	queue.StartQueue(ctx)
-	countDown.Wait()
+	if count != 3 {
+		t.Errorf("Expected count to be 3, got %d", count)
+	}
+}
+
+func TestGetFromQueue(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
+
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
+
+	data := queue.getFromQueue(context.Background())
+
+	if len(data) != 0 {
+		t.Errorf("Expected data to be empty, got %v", data)
+	}
+}
+
+func TestStartQueue(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
+
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
+
+	err := queue.StartQueue(context.Background())
+
+	if err != nil {
+		t.Errorf("Expected err to be nil, got %v", err)
+	}
+}
+
+func TestStartQueue_AlreadyStarted(t *testing.T) {
+	taskStorageManager := &MockTaskStorage{}
+	errorHandler := MockErrorHandler
+
+	queue := CreateTaskQueue(MockTask, 3, taskStorageManager, errorHandler)
+
+	// Start the queue
+	err := queue.StartQueue(context.Background())
+	if err != nil {
+		t.Errorf("Expected err to be nil, got %v", err)
+	}
+
+	// Try starting the queue again
+	err = queue.StartQueue(context.Background())
+	if err == nil || err.Error() != "queue is already started" {
+		t.Errorf("Expected err to be 'queue is already started', got %v", err)
+	}
 }
