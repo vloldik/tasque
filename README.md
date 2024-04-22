@@ -19,7 +19,7 @@ Replace `your_username` with your actual GitHub username or the name of your pro
 To create a task queue, use the `CreateTaskQueue` function:
 
 ```go
-taskQueue := tasque.CreateTaskQueue(task, threadCount, taskStorageManager, errorHandler)
+taskQueue := tasque.CreateTaskQueue(task, threadCount, taskStorageManager, errorHandler, taskTimeoutDuration)
 ```
 
 - `task`: A function or method that represents the task to be executed. It should have the signature `func(ctx context.Context, data D) bool`, where `D` is the type of data for the task.
