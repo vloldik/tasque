@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-type MemoryTaskStorage[D struct{}] struct {
+type MemoryTaskStorage[D comparable] struct {
 	mutex     sync.Mutex
 	taskQueue []D
 }
 
-func NewMemoryTaskStorage[D struct{}]() *MemoryTaskStorage[D] {
+func NewMemoryTaskStorage[D comparable]() *MemoryTaskStorage[D] {
 	return &MemoryTaskStorage[D]{
 		taskQueue: make([]D, 0),
 	}
