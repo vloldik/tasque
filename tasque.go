@@ -81,6 +81,7 @@ func (queue *Tasque[D]) startTask(ctx context.Context, data D) {
 	needToResheduleChan := make(chan bool)
 	needToReshedule := false
 	defer func() {
+		defer queue.wg.Done()
 		err := queue.taskStorageManager.DeleteTaskFromStorage(ctx, &data)
 		if err != nil {
 			queue.errorHandler(CreateDeleteTaskError(err))
@@ -92,7 +93,6 @@ func (queue *Tasque[D]) startTask(ctx context.Context, data D) {
 		if err := queue.sendToQueue(ctx, false, data); err != nil {
 			queue.errorHandler(CreateSaveTaskError(err))
 		}
-		queue.wg.Done()
 	}()
 	go func(task Task[D]) {
 		defer func() {
