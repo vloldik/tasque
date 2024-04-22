@@ -1,58 +1,138 @@
-# Tasque: A Generic Task Queue Package
+# Tasque
 
-[![GoDoc](https://godoc.org/github.com/vloldik/tasque?status.svg)](https://godoc.org/github.com/vloldik/tasque)
-[![Go Report Card](https://goreportcard.com/badge/github.com/vloldik/tasque)](https://goreportcard.com/report/github.com/vloldik/tasque)
-
-Tasque is a Go package that provides a generic task queue for concurrent processing of tasks. It supports storing tasks in a storage manager if the queue is full, and allows custom error handling.
-
-## Features
-
-- **Generic Task Queue**: Process tasks using a generic task queue.
-- **Storage Management**: Store tasks in a storage manager if the queue is full.
-- **Custom Error Handling**: Set a custom error handler to handle errors during task processing.
+Tasque is a Go package that provides a task queue implementation with thread management. It allows you to create a task queue with a specified number of threads and provides methods to send tasks to the queue, start the queue, and manage task storage.
 
 ## Installation
 
-To install Tasque, use `go get`:
-
-```sh
-go get github.com/vloldik/tasque
-```
-
-## Usecase
+To use Tasque in your Go project, you can simply import the package:
 
 ```go
-ctx := context.Background()
-countDown := sync.WaitGroup{}
-countDown.Add(2)
-
-maxParallelJobs := 10
-maxQueueSizeInRam := 2
-
-queue := NewTasksQueue(func(ctx context.Context, data int) {
-	fmt.Printf("Hello from queue! Item №%d\n", data)
-	time.Sleep(time.Second)
-	countDown.Done()
-}, maxQueueSizeInRam, maxParallelJobs)
-
-queue.SetTaskStoreManager(&yourmanager)
-queue.SetErrorHandler(func(err error) { fmt.Printf("An error occurred %e\n", err) })
-queue.SendToQueue(ctx, 1)
-queue.SendToQueue(ctx, 2)
-queue.StartQueue(ctx)
-countDown.Wait()
+import "github.com/your_username/tasque"
 ```
 
-## Store implementations
-* SQLite, gorm [tasquelite](https://github.com/vloldik/tasquelite)
+Replace `your_username` with your actual GitHub username or the name of your project where you want to import Tasque.
+
+## Usage
+
+### Creating a Task Queue
+
+To create a task queue, use the `CreateTaskQueue` function:
+
+```go
+taskQueue := tasque.CreateTaskQueue(task, threadCount, taskStorageManager, errorHandler)
+```
+
+- `task`: A function or method that represents the task to be executed. It should have the signature `func(ctx context.Context, data D) bool`, where `D` is the type of data for the task.
+- `threadCount`: The number of threads to use for executing tasks concurrently.
+- `taskStorageManager`: An implementation of the `TaskStorageSaveGetDeleter` interface that handles saving, retrieving, and deleting tasks from storage.
+- `errorHandler`: An implementation of the `ErrorHandler` interface that handles errors occurred during task execution.
+
+### Sending Tasks to the Queue
+
+To send a task to the queue, use the `SendToQueue` method:
+
+```go
+err := taskQueue.SendToQueue(ctx, data)
+```
+
+- `ctx`: The context.Context for the task execution.
+- `data`: The data for the task.
+
+### Starting the Queue
+
+To start the task queue, use the `StartQueue` method:
+
+```go
+err := taskQueue.StartQueue(ctx)
+```
+
+- `ctx`: The context.Context for the task queue.
+
+### Task Storage
+
+The `taskStorageManager` parameter in the `CreateTaskQueue` function requires an implementation of the `TaskStorageSaveGetDeleter` interface:
+
+```go
+type TaskStorageSaveGetDeleter[D struct{}] interface {
+ SaveTaskToStorage(ctx context.Context, data *D) error
+ GetTasksFromStorage(ctx context.Context, count int) ([]D, error)
+ DeleteTaskFromStorage(ctx context.Context, data *D) error
+}
+```
+
+You can implement this interface to provide your own storage mechanism for tasks.
+
+### Error Handling
+
+The `errorHandler` parameter in the `CreateTaskQueue` function requires an implementation of the `ErrorHandler` interface:
+
+```go
+type ErrorHandler interface {
+ HandleError(err error) bool
+}
+```
+
+You can implement this interface to define how errors should be handled during task execution.
+
+## Example
+
+Here's an example usage of Tasque:
+
+```go
+func main() {
+	wg := sync.WaitGroup{}
+	// Define a task function
+	task := func(ctx context.Context, data TaskData) bool {
+		fmt.Printf("Executing task %d with data: %s\n", data.ID, data.Data)
+		wg.Done()
+		// ... Your task logic goes here ...
+
+		// Return if the task need to re-shedule
+		return false
+	}
+
+	// Define a task storage manager
+	taskStorageManager := &tasque.MemoryTaskStorage[TaskData]{}
+
+	// Define an error handler
+	errorHandler := func(err error) (needToReshedule bool) { return true // Return if the task need to re-shedule on error }
+
+	timeout := time.Hour
+
+	// Create a task queue
+	taskQueue := tasque.CreateTaskQueue(task, 3, taskStorageManager, errorHandler, timeout)
+
+	// Send tasks to the queue
+	for i := 0; i < 10; i++ {
+		data := TaskData{
+			ID:   i + 1,
+			Data: fmt.Sprintf("Data for task %d", i+1),
+		}
+		err := taskQueue.SendToQueue(context.Background(), data)
+		if err != nil {
+			log.Printf("Failed to send task to the queue: %v", err)
+		}
+	}
+
+	wg.Add(10)
+
+	// Start the task queue
+	err := taskQueue.StartQueue(context.Background())
+	if err != nil {
+		log.Printf("Failed to start the task queue: %v", err)
+	}
+
+	// Wait for all tasks to complete
+	wg.Wait()
+
+	fmt.Println("All tasks completed")
+}
+
+
+```
+
+In this example, we define a task function that prints the task ID and data when executed. We use the `MemoryTaskStorage` as the task storage manager and the `DefaultErrorHandler` for error handling. We then send 10 tasks to the queue, start the queue, and wait for all tasks to complete.
 
 ## Contributing
-Contributions are welcome! If you find a bug or have a feature request, please open an issue. If you would like to contribute code, please follow these steps:
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Write tests for your changes.
-4. Make your changes and ensure that all tests pass.
-5. Submit a pull request with a detailed description of your changes.
 
-License
-Tasque is released under the MIT License.
+Contributions to Tasque are welcome! 

@@ -7,10 +7,10 @@ import "context"
 // Task is the interface that wraps the basic Do method.
 //
 // Do is called to perform the task.
-type Task[D interface{}] func(ctx context.Context, data D)
+type Task[D interface{}] func(ctx context.Context, data D) (needToReshedule bool)
 
 // ErrorHandler is a function that handles errors.
-type ErrorHandler func(err error)
+type ErrorHandler func(err error) (needToReshedule bool)
 
 // ErrorHandlerSetter is the interface that wraps the SetErrorHandler method.
 //
@@ -27,9 +27,8 @@ type ErrorHandlerSetter interface {
 // TaskFromStorageBatchCount returns the number of tasks to retrieve in a single batch.
 type TaskStorageSaveGetDeleter[D interface{}] interface {
 	SaveTaskToStorage(ctx context.Context, data *D) error
-	GetTasksFromStorage(ctx context.Context) ([]D, error)
+	GetTasksFromStorage(ctx context.Context, count int) ([]D, error)
 	DeleteTaskFromStorage(ctx context.Context, data *D) error
-	TaskFromStorageBatchCount() int
 }
 
 // TasksQueueManger is the interface that wraps the StartQueue and SendToQueue methods.
